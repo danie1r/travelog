@@ -1,25 +1,39 @@
 
 <script lang="ts" setup>
-import HelloWorld from '@/components/HelloWorld.vue';
 import { onMounted, reactive, ref } from 'vue';
-import { PageInfo } from '@/types/PageInfo.ts';
-import { startOpenAI } from '../helper';
+import { PageInfo } from '@/types/baseTypes.ts';
+import { parseToOpenAI } from '~/helper';
 
-
-const currentInfo = reactive({
-  url : "",
-  domain : "",
+const currentInfo = reactive<PageInfo>({
+  url : undefined,
+  domain : undefined,
   accessed_date : new Date(),
-  dom : document.documentElement.outerText
+  places : undefined
 })
 
 const isLoading = ref(false);
 const contentLoaded = ref(false);
 const errorParsing = ref(false);
+const openai = parseToOpenAI();
 
-// function savePageInfoLocal(type:string, message:PageInfo) {
-//   browser.runtime.sendMessage({type: type,data: message});
-// }
+function parseHTML(data: string) {
+  let text = ''
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(data, 'text/html')
+  function extractText(node : Node) {
+    let text = ''
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        text += child.textContent + ' ';
+      } else if (child.nodeType === Node.ELEMENT_NODE && child.nodeName !== 'SCRIPT' && child.nodeName !== 'STYLE'){
+        text += extractText(child) + ' '
+      }
+    }
+    return text.trim()
+  }
+
+  return extractText(doc.body)
+}
 
 async function getDomain() {
   errorParsing.value = false;
@@ -27,37 +41,28 @@ async function getDomain() {
   // `tab` will either be a `tabs.Tab` instance or `undefined`.
   let [tab] = await browser.tabs.query(queryOptions);
   isLoading.value = true;
-  const tabInfo : PageInfo = {
-    url : tab.url,
-    accessed_date: new Date(),
-    domain : tab.title
-  }
-  currentInfo.domain = tabInfo.domain ? tabInfo.domain : "N/A"
+  currentInfo.url = tab.url
+  currentInfo.domain = tab.title
   
-  const message = document.querySelector("#message");
   return browser.scripting.executeScript({
     target: { tabId: tab.id! },
-    // injectImmediately: true,  // uncomment this to make it execute straight away, other wise it will wait for document_idle
+    injectImmediately: true,  // uncomment this to make it execute straight away, other wise it will wait for document_idle
     func: DOMtoString,
-    // args: ['body']  // you can use this to target what element to get the html for
-  }).then(function (results) {
-    tabInfo.dom = results[0].result;
-    const openai = startOpenAI()
-    const res = openai.startParsing(results[0].result)
-    message!.innerHTML = JSON.stringify(res);
+    args: ['body']  // you can use this to target what element to get the html for
+  }).then(async function (results) {
+    
+    const response = parseHTML(results[0].result)
+    const parsed = await openai.startParsing(response)
+    currentInfo.places = parsed
     isLoading.value = false;
     contentLoaded.value = true;
   }).catch(function (error) {
     isLoading.value = false
     contentLoaded.value = true;
     errorParsing.value = true;
-    message!.innerHTML = 'There was an error injecting script : \n' + error.message;
+    console.log(`Error: ${error}`)
   });
 }
-
-// onMounted(()=>{
-//   getDomain()
-// })
 
 function DOMtoString(selector : any) {
     if (selector) {
@@ -73,20 +78,21 @@ function DOMtoString(selector : any) {
 
 <template>
   <div>
-    <!-- <a href="https://wxt.dev" target="_blank">
-      <img src="/wxt.svg" class="logo" alt="WXT logo" />
-    </a>
-    <a href="https://vuejs.org/" target="_blank">
-      <img src="@/assets/vue.svg" class="logo vue" alt="Vue logo" />
-    </a>
-  </div>
-  <HelloWorld msg="WXT + Vue" /> -->
+    <div>
+      <div v-if="currentInfo.domain">{{ currentInfo.domain }}</div>
+    </div>
     <div>
       
       <div v-if="!isLoading && !contentLoaded">I wonder whats in store...</div>
-      <div v-if="!isLoading && contentLoaded"></div>
+      <div v-if="!isLoading && contentLoaded" v-for="place in currentInfo.places">
+        <div>{{ place.name }}</div>
+        <div>{{ place.type }}</div>
+        <div>{{ place.address }}</div>
+        <div>{{ place.description }}</div>
+        <div>-------------</div>
+      </div>
       <div v-if="isLoading">Parsing the website...</div>
-      <div id="message"></div>
+      
     </div>
     
 
@@ -113,3 +119,4 @@ function DOMtoString(selector : any) {
 }
 
 </style>
+../../helper@/types/browserTypes
