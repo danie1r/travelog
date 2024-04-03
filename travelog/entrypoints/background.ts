@@ -2,9 +2,10 @@
 export default defineBackground(() => {
   
   browser.runtime.onInstalled.addListener(({ reason }) => {
+    const OpenAIKEY = ''
     if (reason === 'install') {
       browser.storage.local.set({ installDate: Date.now() });
-      browser.storage.local.set({ "openaikey" : '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'})
+      browser.storage.local.set({ "openaikey" : OpenAIKEY})
     }
   });
   
