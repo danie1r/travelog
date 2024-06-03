@@ -43,16 +43,6 @@ class OpenAIService {
             dest.dateAccessed = new Date()
         })
         return res.destinations
-        // const res = {
-        //     name: "Hotel California",
-        //     type: "hotel",
-        //     description: "Hotel California wowowowo",
-        //     source: source,
-        //     link: link
-        // } as Place
-
-        // const response = [res]
-        // return response
     }
 }
 
