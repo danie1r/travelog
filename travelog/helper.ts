@@ -23,13 +23,12 @@ class OpenAIService {
         }   
     }
 
-    async startParsing(data?: string) : Promise< Place[] | undefined>{
+    async startParsing(data?: string, source?: string, link?: string) : Promise< Place[] | undefined>{
         if (!data){
             return undefined
         }
-
         
-        const scheme = "destinations: [{name: string, place_type?: string, address: string, startDate?: Date, endDate?: Date, description?: string, coordinates?: GeolocationCoordinates}]"
+        const scheme = "destinations: [{name: string, category?: string, address: string, startDate?: Date, endDate?: Date, description?: string, coordinates?: GeolocationCoordinates}]"
         const completion = await this.client.chat.completions.create({
             model:'gpt-3.5-turbo',
             messages: [{"role":"system","content":`You are an document parser that only responds using the api below\ndocument:${scheme}`},
@@ -38,8 +37,22 @@ class OpenAIService {
                 response_format: { "type": "json_object" }
         })
         const res : ParseReturn = JSON.parse(completion.choices[0].message.content)
-        console.log(res)
+        res.destinations.map((dest) => {
+            dest.source = source,
+            dest.link = link,
+            dest.dateAccessed = new Date()
+        })
         return res.destinations
+        // const res = {
+        //     name: "Hotel California",
+        //     type: "hotel",
+        //     description: "Hotel California wowowowo",
+        //     source: source,
+        //     link: link
+        // } as Place
+
+        // const response = [res]
+        // return response
     }
 }
 
