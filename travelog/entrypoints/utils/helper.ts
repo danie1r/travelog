@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { defineProxyService } from '@webext-core/proxy-service';
-import { PageInfo, ParseReturn, Place } from './types/baseTypes';
+import { PageInfo, ParseReturn, Place } from '@/types/baseTypes';
 
 class OpenAIService {
     client : any
@@ -38,6 +38,7 @@ class OpenAIService {
         })
         const res : ParseReturn = JSON.parse(completion.choices[0].message.content)
         res.destinations.map((dest) => {
+            dest.category = dest.category ? dest.category : "place"
             dest.source = source,
             dest.link = link,
             dest.dateAccessed = new Date()

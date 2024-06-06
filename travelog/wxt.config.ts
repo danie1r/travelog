@@ -12,6 +12,13 @@ export default defineConfig({
     plugins: [vue()],
   }),
   manifest: {
-    permissions: ['storage', "tabs", "activeTab", 'scripting'],
+    permissions: ['storage', "tabs", "activeTab", 'scripting', 'contextMenus', 'management'],
+    web_accessible_resources: [
+      {
+        resources: ['entrypoints/overlay.content/index.html'],
+        matches: ['<all_urls>'],
+      },
+    ],
+    browser_action: {}
   },
 });
