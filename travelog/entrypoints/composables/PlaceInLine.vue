@@ -5,15 +5,6 @@ defineProps<{
   place: Place;
 }>();
 
-function formatDate(date: Date | string) {
-  if (typeof date === "string") {
-    date = new Date(date);
-  }
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
 </script>
 
 <template>
@@ -36,8 +27,7 @@ function formatDate(date: Date | string) {
     <div>Address : {{ place.address }}</div>
     <div>Description : {{ place.description }}</div>
     <div>
-      Date Accessed :
-      {{ place.dateAccessed ? formatDate(place.dateAccessed) : "No date" }}
+      Date Accessed : {{ place.dateAccessed }}
     </div>
   </div>
 </template>

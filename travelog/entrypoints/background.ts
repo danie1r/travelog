@@ -1,6 +1,96 @@
 import { Tabs } from "wxt/browser";
-import { parseToOpenAI } from "@/entrypoints/utils/helper";
-import { PageInfo, Place } from "@/types/baseTypes";
+// import openAIServiceInstance from "./utils/instance";
+import { ParseReturn, Place } from "@/types/baseTypes";
+import { parseDocument, DomUtils, ElementType } from "htmlparser2";
+import { AnyNode } from "domhandler";
+
+const travelRelatedTerms: string[] = [
+  // Destinations
+  "tourist destinations",
+  "popular destinations",
+  "travel spots",
+  "vacation spots",
+  "holiday destinations",
+  // Accommodations
+  "hotels",
+  "hostels",
+  "bed and breakfast",
+  "vacation rentals",
+  "resorts",
+  "guesthouses",
+  "lodges",
+  "campsites",
+  "boutique hotels",
+  // Transportation
+  "flights",
+  "airlines",
+  "airport transfers",
+  "car rentals",
+  "train tickets",
+  "bus services",
+  "taxi services",
+  "ferry services",
+  // Activities
+  "sightseeing",
+  "tours",
+  "excursions",
+  "adventures",
+  "outdoor activities",
+  "cultural experiences",
+  "guided tours",
+  "hiking",
+  "diving",
+  "skiing",
+  "wildlife safaris",
+  // Booking
+  "reservations",
+  "itinerary",
+  // Planning
+  "travel guide",
+  "travel tips",
+  "travel advice",
+  "travel itinerary",
+  "trip planner",
+  "travel insurance",
+  "visa information",
+  "travel restrictions",
+  "weather forecast",
+  // Travel Types
+  "family travel",
+  "solo travel",
+  "couple travel",
+  "group travel",
+  "luxury travel",
+  "budget travel",
+  "adventure travel",
+  "eco travel",
+  "business travel",
+  // Regions and Areas
+  "regions",
+  "cities",
+  "towns",
+  "villages",
+  "beaches",
+  "mountains",
+  "national parks",
+  "historical sites",
+  "cultural sites",
+  "urban areas",
+  "countryside",
+  // User Engagement
+  "travel blogs",
+  "travel stories",
+  "photo galleries",
+  "travel videos",
+  // Services and Amenities
+  "breakfast included",
+  "swimming pool",
+  "fitness center",
+  "spa services",
+  "restaurant",
+  "room service",
+  "laundry service",
+];
 
 async function getCurrentTab() {
   let queryOptions = { active: true, lastFocusedWindow: true };
@@ -16,7 +106,8 @@ async function sendTabInfo(msg: string) {
     switch (msg) {
       case "app_opened":
         message = {
-          type: 'message', timestamp: Date.now(), 
+          type: "message",
+          timestamp: Date.now(),
           action: msg,
           id: tab.id,
           url: tab.url,
@@ -25,9 +116,11 @@ async function sendTabInfo(msg: string) {
         break;
       case "stop_track":
         message = {
-          type: 'message', timestamp: Date.now(), 
+          type: "message",
+          timestamp: Date.now(),
           action: msg,
         };
+        break;
     }
     browser.tabs.sendMessage(tab.id, message);
   }
@@ -77,29 +170,31 @@ async function searchVisitedPlaces(link: string) {
 }
 
 function parseHTML(data: string) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(data, "text/html");
-  function extractText(node: Node) {
+  const doc = parseDocument(data);
+  const body = DomUtils.findOne(
+    (elem) => elem.tagName === "body",
+    doc.children
+  );
+  function extractText(node: AnyNode) {
     let text = "";
-    for (const child of node.childNodes) {
-      if (child.nodeType === Node.TEXT_NODE) {
-        text += child.textContent + " ";
+    const children = DomUtils.getChildren(node) || [];
+    for (const child of children) {
+      if (child.type === ElementType.Text) {
+        text += DomUtils.getText(child) + " ";
       } else if (
-        child.nodeType === Node.ELEMENT_NODE &&
-        child.nodeName !== "SCRIPT" &&
-        child.nodeName !== "STYLE"
+        child.type === ElementType.Tag &&
+        child.tagName !== "script" &&
+        child.tagName !== "style"
       ) {
         text += extractText(child) + " ";
       }
     }
     return text.trim();
   }
-
-  return extractText(doc.body);
+  return body ? extractText(body) : "";
 }
 
 async function parseWebsite(tab: Tabs.Tab, tabId: number): Promise<Place[]> {
-  const openai = parseToOpenAI();
   const result = await browser.scripting
     .executeScript({
       target: { tabId: tabId },
@@ -109,12 +204,40 @@ async function parseWebsite(tab: Tabs.Tab, tabId: number): Promise<Place[]> {
     })
     .then(async function (results) {
       const response = parseHTML(results[0].result);
-      const parsed = await openai.startParsing(response, tab.title, tab.url);
-      // currentInfo.places = parsed;
-      // isLoading.value = false;
-      // contentLoaded.value = true;
-      // browser.runtime.sendMessage({ action: "save_recents", data: parsed });
-      return parsed;
+      const scheme =
+        "destinations: [{name: string, category: string, address: string, startDate?: Date, endDate?: Date, description?: string, coordinates?: GeolocationCoordinates}]";
+      const data = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization:
+            `Bearer ${import.meta.env.VITE_OPENAI_SECRET_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo",
+          messages: [
+            {
+              role: "system",
+              content: `You are an document parser that only responds using the api below\ndocument:${scheme}`,
+            },
+            {
+              role: "user",
+              content: `Return an array of json object representing travel destinations parsed from the document at the end of the prompt. \n${response}`,
+            },
+          ],
+          max_tokens: 4096,
+          response_format: { type: "json_object" },
+        }),
+      });
+      const parsed = await data.json();
+      const res: ParseReturn = JSON.parse(parsed.choices[0].message.content);
+      res.destinations.map((dest) => {
+        dest.category = dest.category ? dest.category : "place";
+        (dest.source = tab.title),
+          (dest.link = tab.url),
+          (dest.dateAccessed = new Date().toDateString());
+      });
+      return res.destinations;
     })
     .catch(function (error) {
       console.log(`Error: ${error}`);
@@ -148,16 +271,24 @@ async function getRecents() {
 }
 
 function clearRecents() {
-  browser.storage.local.set({ data: [] });
+  browser.storage.local.set({ recentItems: [] });
+}
+
+function clearRecentWebsiteLogs() {
+  browser.storage.local.set({visited : []});
 }
 
 function saveRecents(items?: Place[]) {
+  
   if (items) {
+    items.map((item) => {
+      console.log(item)
+    })
     browser.storage.local
       .get("recentItems")
       .then((result) => {
         let orig = result.recentItems || [];
-        orig = orig.concat(items);
+        orig = items.concat(orig);
         browser.storage.local
           .set({ recentItems: orig })
           .then(() => {
@@ -173,17 +304,41 @@ function saveRecents(items?: Place[]) {
   }
 }
 
+async function checkWebsiteType(
+  tab: Tabs.Tab,
+  tabId: number
+): Promise<boolean> {
+  const result = await browser.scripting
+    .executeScript({
+      target: { tabId: tabId },
+      injectImmediately: true, // uncomment this to make it execute straight away, other wise it will wait for document_idle
+      func: DOMtoString,
+      args: ["body"], // you can use this to target what element to get the html for
+    })
+    .then(async function (results) {
+      const response: string = results[0].result;
+      return travelRelatedTerms.some((word) =>
+        response.toLowerCase().includes(word.toLowerCase())
+      );
+    })
+    .catch(function (error) {
+      console.log(`Error: ${error}`);
+      return false;
+    });
+
+  return result;
+}
+
 export default defineBackground(() => {
   browser.runtime.onInstalled.addListener(({ reason }) => {
     if (reason === "install") {
       browser.storage.local.set({ installDate: Date.now() });
       browser.storage.local.set({
-      });
-      browser.storage.local.set({
         recentItems: [],
         visited: [],
         savedItems: [],
       });
+
     }
   });
 
@@ -197,68 +352,45 @@ export default defineBackground(() => {
     switch (msg.action) {
       case "stop_track":
         sendTabInfo("stop_track");
-        browser.runtime.reload();
         break;
       case "remove_recents":
         clearRecents();
+        clearRecentWebsiteLogs();
         break;
       case "get_recents":
         if (sender.tab && sender.tab.id) {
-          const items = getRecents()
+          const items = await getRecents();
           const message = {
-            type: 'message', timestamp: Date.now(), 
+            type: "message",
+            timestamp: Date.now(),
             action: "recents_received",
             content: items,
           }; // Message data
-
           browser.tabs.sendMessage(sender.tab.id, message);
         }
         break;
-      // case 'get_contents':
-      //   const tab = sender.tab
-      //   if (tab && tab.url && tab.id) {
-      //     const visitedStatus = await checkVisitState(tab.url);
-      //     console.log("Visit status :" + visitedStatus)
-      //     if (visitedStatus) {
-      //       const visitedPlaces = await searchVisitedPlaces(tab.url);
-      //       const message = {
-      //         type: 'message', timestamp: Date.now(), 
-      //         action: "display_parse_result",
-      //         content: visitedPlaces,
-      //       };
-      //       console.log("Visited Message: " + message)
-      //       browser.tabs.sendMessage(tab.id, message);
-      //     } else {
-      //       const items = await parseWebsite(tab, tab.id);
-      //       const message = {
-      //         type: 'message', timestamp: Date.now(), 
-      //         action: "display_parse_result",
-      //         content: items,
-      //       };
-      //       console.log("New Info: " + message)
-      //       browser.tabs.sendMessage(tab.id, message);
-      //       saveRecents(items);
-      //     }
-      //   }
     }
   });
 
   /** CONTEXT MENU SCRIPTS */
   browser.contextMenus.create({
-    id: "place-search",
+    id: "search_element",
     title: "Search on Travelog",
     contexts: ["selection"],
   });
-
   browser.contextMenus.onClicked.addListener((info, tab) => {
     switch (info.menuItemId) {
-      case "place-search":
+      case "search_element":
         if (tab && tab.id) {
-          console.log(info.selectionText);
+          console.log("Searching the following text: " + info.selectionText);
           const message = {
-            type: 'message', timestamp: Date.now(), 
+            type: "message",
+            timestamp: Date.now(),
             action: "search_element",
             content: info.selectionText,
+            id: tab.id,
+            url: tab.url,
+            title: tab.title,
           }; // Message data
           browser.tabs.sendMessage(tab.id, message);
           break;
@@ -266,35 +398,52 @@ export default defineBackground(() => {
     }
   });
 
+  /** Triggered when new url reached */
   browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete' && tab.url && tab.id){
-      const visitedStatus = await checkVisitState(tab.url);
-      console.log("Visit status :" + visitedStatus)
-      if (visitedStatus) {
-        const visitedPlaces = await searchVisitedPlaces(tab.url);
-        const message = {
-          type: 'message', timestamp: Date.now(), 
-          action: "landed",
-          content: visitedPlaces,
-          id: tab.id,
-          url: tab.url,
-          title: tab.title,
-        };
-        console.log("Visited Message: " + message)
-        browser.tabs.sendMessage(tab.id, message);
-      } else {
-        const items = await parseWebsite(tab, tab.id);
-        const message = {
-          type: 'message', timestamp: Date.now(), 
-          action: "landed",
-          content: items,
-          id: tab.id,
-          url: tab.url,
-          title: tab.title,
-        };
-        console.log("New Info: " + message)
-        browser.tabs.sendMessage(tab.id, message);
-        saveRecents(items);
+    if (changeInfo.status === "complete" && tab.url && tab.id) {
+      const isTravelSite = await checkWebsiteType(tab, tab.id);
+      console.log("Is it a travel website: " + isTravelSite);
+      if (isTravelSite) {
+        // Check if visited
+        const visitedStatus = await checkVisitState(tab.url);
+        console.log("Visit status :" + visitedStatus);
+        if (visitedStatus) {
+          const visitedPlaces = await searchVisitedPlaces(tab.url);
+          visitedPlaces?.map((item) => {
+            console.log(item.dateAccessed)
+          })
+          const message = {
+            type: "message",
+            timestamp: Date.now(),
+            action: "landed",
+            content: visitedPlaces,
+            id: tab.id,
+            url: tab.url,
+            title: tab.title,
+          };
+          console.log("Visited Message: " + message);
+          browser.tabs.sendMessage(tab.id, message);
+        } else {
+          const items = await parseWebsite(tab, tab.id);
+          logVisitedUrl(tab.url);
+          if (items.length > 0) {
+            const message = {
+              type: "message",
+              timestamp: Date.now(),
+              action: "landed",
+              content: items,
+              id: tab.id,
+              url: tab.url,
+              title: tab.title,
+            };
+            console.log("New Info: " + items);
+            browser.tabs.sendMessage(tab.id, message);
+            items.map((item) => {
+              console.log(item.dateAccessed)
+            })
+            saveRecents(items);
+          }
+        }
       }
     }
   });

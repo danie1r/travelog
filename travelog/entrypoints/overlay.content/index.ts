@@ -1,15 +1,16 @@
-// entrypoints/example-ui.content/index.ts
 import { createApp } from 'vue';
 import App from '../components/Overlay.vue';
 import './style.css';
 
 export default defineContentScript({
   matches: ['<all_urls>'],
-  // 2. Set cssInjectionMode
   cssInjectionMode: 'ui',
-
   async main(ctx) {
-    // 3. Define your UI
+    const excludedUrls = ["https://www.google.com/*", "https://www.google.com"];
+    const currentUrl = window.location.href;
+    if (excludedUrls.some(url => new RegExp(url.replace('*', '.*')).test(currentUrl))) {
+      return; // Exit if the current URL matches any of the exclude patterns
+    }
     const ui = await createShadowRootUi(ctx, {
       name: 'example-ui',
       position: 'inline',

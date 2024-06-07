@@ -4,20 +4,15 @@ import Popup from "../components/Popup.vue";
 import { Place } from "@/types/baseTypes";
 
 const openPopup = ref(false);
-const searchElement = ref("NO SEARCH GIVEN");
+const searchElement = ref<string | undefined>(undefined);
 const tabId = ref<number | undefined>(undefined);
 const tabUrl = ref<string | undefined>(undefined);
 const tabTitle = ref<string | undefined>(undefined);
 const itemFound = ref<boolean>(false);
 const items = ref<Place[]>([]);
 
-const displayStyle = computed(() => {
-  return {
-    display: "block",
-  };
-});
-
 browser.runtime.onMessage.addListener((message, sender, send) => {
+  console.log(message)
   switch(message.action) {
     case "landed":
       openPopup.value = true;
@@ -34,9 +29,13 @@ browser.runtime.onMessage.addListener((message, sender, send) => {
       tabId.value = message.id;
       tabUrl.value = message.url;
       tabTitle.value = message.title;
-      displayStyle.value.display = "block";
       break;
-    case "search_elemment":
+    case "search_element":
+      console.log(message)
+      openPopup.value = true;
+      tabId.value = message.id
+      tabUrl.value = message.url;
+      tabTitle.value = message.title;
       searchElement.value = message.content;
       break;
     case "stop_track":
@@ -48,13 +47,18 @@ browser.runtime.onMessage.addListener((message, sender, send) => {
 function handleIcon() {
   browser.runtime.sendMessage({timestamp: Date.now(), popupOpen: true, type: 'message'})
 }
-
 </script>
 
 <template>
   <div id="app">
-    <div v-if="openPopup && tabId && itemFound">
+    <div v-if="openPopup && tabId && itemFound && !searchElement">
       <Popup :title="tabTitle" :tabId="tabId" :url="tabUrl" :places="items" />
+    </div>
+    <div v-else-if="openPopup && tabId && !searchElement">
+      <Popup :title="tabTitle" :tabId="tabId" :url="tabUrl" />
+    </div>
+    <div v-else-if="openPopup && tabId && searchElement">
+      <Popup :title="tabTitle" :tabId="tabId" :url="tabUrl" :searchElement="searchElement" />
     </div>
     <div v-else>
       <button class="icon-button" @click="handleIcon">

@@ -16,7 +16,7 @@ export interface Place {
     coordinates?: GeolocationCoordinates
     source?: string
     link?: string
-    dateAccessed: Date
+    dateAccessed: string
 }
 
 export interface ParseReturn {

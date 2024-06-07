@@ -19,6 +19,7 @@ export default defineConfig({
         matches: ['<all_urls>'],
       },
     ],
-    browser_action: {}
+    browser_action: {},
+    host_permissions: ["<all_urls>"],
   },
 });
